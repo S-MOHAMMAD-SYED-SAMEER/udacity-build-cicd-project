@@ -1,0 +1,109 @@
+name: Frontend Continuous Integration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'starter/frontend/**'
+      - '.github/workflows/frontend-ci.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '18.14'
+
+jobs:
+  # lint and test declare no `needs`, so GitHub schedules them in parallel.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 18.14
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.14'
+          cache: 'npm'
+          cache-dependency-path: starter/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 18.14
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.14'
+          cache: 'npm'
+          cache-dependency-path: starter/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: CI=true npm test
+
+  build:
+    name: Build
+    # Gate: only runs when BOTH lint and test succeed.
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 18.14
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.14'
+          cache: 'npm'
+          cache-dependency-path: starter/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: CI=true npm test
+
+      # There is no .dockerignore, and the Dockerfile does `COPY . .` AFTER its own
+      # `npm ci`. Leaving the runner's glibc node_modules in place would overwrite the
+      # image's musl/alpine install. Remove it before building.
+      - name: Remove host node_modules before Docker build
+        run: rm -rf node_modules
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg=REACT_APP_MOVIE_API_URL=http://localhost:5000 \
+            --tag=mp-frontend:latest \
+            .
+
+      - name: Show built image
+        run: docker image ls mp-frontend:latest

@@ -1,0 +1,92 @@
+name: Backend Continuous Integration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'starter/backend/**'
+      - '.github/workflows/backend-ci.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # lint and test declare no `needs`, so GitHub schedules them in parallel.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pipenv'
+          cache-dependency-path: starter/backend/Pipfile.lock
+
+      - name: Install pipenv
+        run: pip install pipenv flake8
+
+      # --dev is required: flake8 lives in [dev-packages], so a plain
+      # `pipenv install` would leave `pipenv run lint` with no flake8.
+      - name: Install dependencies
+        run: pipenv install --dev
+
+      - name: Run flake8
+        run: pipenv run lint
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pipenv'
+          cache-dependency-path: starter/backend/Pipfile.lock
+
+      - name: Install pipenv
+        run: pip install pipenv flake8
+
+      - name: Install dependencies
+        run: pipenv install --dev
+
+      # test_app.py uses `from . import app`, so pytest must run from starter/backend.
+      - name: Run pytest
+        run: pipenv run test
+
+  build:
+    name: Build
+    # Gate: only runs when BOTH lint and test succeed.
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter/backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build --tag mp-backend:latest .
+
+      - name: Show built image
+        run: docker image ls mp-backend:latest
